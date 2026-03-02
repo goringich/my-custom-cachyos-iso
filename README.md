@@ -10,6 +10,7 @@
 - `build.sh` - сборка ISO через `mkarchiso`.
 - `overlay/airootfs/usr/local/bin/deploy-1to1.sh` - установщик внутри live-среды.
 - `scripts/install-deps.sh` - установка зависимостей сборки.
+- `system-bootstrap/` - submodule с payload твоей системы.
 
 ## 1) Как загрузить этот проект на GitHub
 
@@ -17,7 +18,7 @@
 
 ```bash
 cd /home/goringich/custom-cachyos-iso
-git add .gitignore README.md build.sh overlay scripts
+git add .gitignore .gitmodules README.md build.sh overlay scripts system-bootstrap
 git commit -m "Prepare project for GitHub: docs, ignore rules, helper scripts"
 git push origin master
 ```
@@ -27,7 +28,7 @@ git push origin master
 ```bash
 cd /home/goringich/custom-cachyos-iso
 git init
-git add .gitignore README.md build.sh overlay scripts
+git add .gitignore .gitmodules README.md build.sh overlay scripts system-bootstrap
 git commit -m "Initial custom-cachyos-iso"
 git branch -M main
 git remote add origin git@github.com:<your_user>/<your_repo>.git
@@ -41,10 +42,12 @@ git push -u origin main
 ```bash
 git clone git@github.com:<your_user>/<your_repo>.git
 cd <your_repo>
+git submodule update --init --recursive
 sudo ./scripts/install-deps.sh
 ```
 
-Далее укажи источник payload (`system-bootstrap`):
+По умолчанию `build.sh` использует payload из `./system-bootstrap`.
+Если нужен другой источник, можно переопределить `PAYLOAD_SRC`:
 
 ```bash
 export PAYLOAD_SRC=/absolute/path/to/system-bootstrap

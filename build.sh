@@ -6,7 +6,7 @@ WORK_DIR="$ROOT_DIR/work"
 OUT_DIR="$ROOT_DIR/out"
 PROFILE_DIR="$WORK_DIR/profile"
 OVERLAY_DIR="$ROOT_DIR/overlay"
-PAYLOAD_SRC="${PAYLOAD_SRC:-/home/goringich/system-bootstrap}"
+PAYLOAD_SRC="${PAYLOAD_SRC:-$ROOT_DIR/system-bootstrap}"
 RELENG_SRC="${RELENG_SRC:-/usr/share/archiso/configs/releng}"
 
 need_cmd() {

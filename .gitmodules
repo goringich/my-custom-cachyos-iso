@@ -1,0 +1,3 @@
+[submodule "system-bootstrap"]
+	path = system-bootstrap
+	url = git@github.com:goringich/system-bootstrap.git
