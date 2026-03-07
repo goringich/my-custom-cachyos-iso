@@ -216,6 +216,138 @@ if [[ -x /root/system-bootstrap/scripts/clone-repos.sh && -f /root/system-bootst
     || log "Repo hydration skipped or partially failed"
 fi
 
+cat > /usr/local/bin/system-bootstrap-restore-audit.sh <<'AUDIT'
+#!/usr/bin/env bash
+set -euo pipefail
+
+USERNAME="${1:-}"
+REPORT_FILE="${2:-}"
+TARGET_HOME="${3:-}"
+MANIFEST="/root/system-bootstrap/configs/repos.txt"
+SERVICES_MANIFEST="/root/system-bootstrap/manifests/enabled-services.txt"
+
+if [[ -z "$USERNAME" ]]; then
+  echo "Usage: system-bootstrap-restore-audit.sh <username> [report-file] [target-home]" >&2
+  exit 1
+fi
+
+if [[ -z "$TARGET_HOME" ]]; then
+  TARGET_HOME="/home/${USERNAME}"
+fi
+
+expand_path() {
+  local raw="$1"
+  HOME="$TARGET_HOME" eval "printf '%s\n' \"$raw\""
+}
+
+report() {
+  local line="$1"
+  printf '%s\n' "$line"
+  if [[ -n "$REPORT_FILE" ]]; then
+    printf '%s\n' "$line" >> "$REPORT_FILE"
+  fi
+}
+
+gap_count=0
+repo_missing=0
+repo_dirty=0
+path_missing=0
+service_gap=0
+
+if [[ -n "$REPORT_FILE" ]]; then
+  mkdir -p "$(dirname "$REPORT_FILE")"
+  : > "$REPORT_FILE"
+fi
+
+report "Restore verification report"
+report "Generated: $(date -Is)"
+report "Target home: $TARGET_HOME"
+
+report ""
+report "[repos]"
+if [[ -f "$MANIFEST" ]]; then
+  while IFS='|' read -r name _repo_url raw_dest branch; do
+    [[ -n "${name:-}" ]] || continue
+    [[ "$name" =~ ^# ]] && continue
+
+    dest="$(expand_path "$raw_dest")"
+    if [[ ! -d "$dest/.git" ]]; then
+      report "missing  $name -> $dest"
+      repo_missing=$((repo_missing + 1))
+      gap_count=$((gap_count + 1))
+      continue
+    fi
+
+    if [[ -n "$(git -C "$dest" status --short 2>/dev/null || true)" ]]; then
+      report "dirty    $name -> $dest"
+      repo_dirty=$((repo_dirty + 1))
+      gap_count=$((gap_count + 1))
+      continue
+    fi
+
+    current_branch="$(git -C "$dest" branch --show-current 2>/dev/null || true)"
+    expected_branch="${branch:-$current_branch}"
+    if [[ -n "$expected_branch" && -n "$current_branch" && "$expected_branch" != "$current_branch" ]]; then
+      report "branch   $name -> current=$current_branch expected=$expected_branch"
+      gap_count=$((gap_count + 1))
+      continue
+    fi
+
+    report "ok       $name -> $dest"
+  done < "$MANIFEST"
+else
+  report "skip     manifest not found: $MANIFEST"
+fi
+
+report ""
+report "[paths]"
+key_paths=(
+  ".config/hypr"
+  ".config/rofi"
+  ".config/waybar"
+  ".config/systemd/user"
+  ".local/bin"
+)
+
+for rel_path in "${key_paths[@]}"; do
+  if [[ -e "$TARGET_HOME/$rel_path" ]]; then
+    report "ok       $rel_path"
+  else
+    report "missing  $rel_path"
+    path_missing=$((path_missing + 1))
+    gap_count=$((gap_count + 1))
+  fi
+done
+
+report ""
+report "[services]"
+if [[ -f "$SERVICES_MANIFEST" ]] && command -v systemctl >/dev/null 2>&1; then
+  while IFS= read -r svc; do
+    [[ -n "${svc:-}" ]] || continue
+    [[ "$svc" =~ ^# ]] && continue
+
+    if systemctl is-enabled "$svc" >/dev/null 2>&1; then
+      report "ok       $svc"
+    else
+      report "disabled $svc"
+      service_gap=$((service_gap + 1))
+      gap_count=$((gap_count + 1))
+    fi
+  done < "$SERVICES_MANIFEST"
+else
+  report "skip     systemd/service manifest unavailable"
+fi
+
+report ""
+report "[summary]"
+report "repo_missing=$repo_missing"
+report "repo_dirty=$repo_dirty"
+report "path_missing=$path_missing"
+report "service_gap=$service_gap"
+report "total_gaps=$gap_count"
+AUDIT
+chmod +x /usr/local/bin/system-bootstrap-restore-audit.sh
+
 cat > /usr/local/bin/system-bootstrap-firstboot.sh <<'FIRSTBOOT'
 #!/usr/bin/env bash
 set -euo pipefail
@@ -224,6 +356,12 @@ USERNAME="$1"
 if [[ -x /root/system-bootstrap/scripts/clone-repos.sh && -f /root/system-bootstrap/configs/repos.txt ]]; then
   runuser -u "$USERNAME" -- env HOME="/home/${USERNAME}" \
     bash /root/system-bootstrap/scripts/clone-repos.sh --mode clone-missing || true
+fi
+if [[ -x /usr/local/bin/system-bootstrap-restore-audit.sh ]]; then
+  install -d -o "$USERNAME" -g "$USERNAME" "/home/${USERNAME}/.local/state/system-bootstrap"
+  report_file="/home/${USERNAME}/.local/state/system-bootstrap/restore-report.txt"
+  /usr/local/bin/system-bootstrap-restore-audit.sh "$USERNAME" "$report_file" "/home/${USERNAME}" || true
+  chown "${USERNAME}:${USERNAME}" "$report_file" || true
 fi
 systemctl disable system-bootstrap-firstboot.service || true
 rm -f /etc/systemd/system/system-bootstrap-firstboot.service
