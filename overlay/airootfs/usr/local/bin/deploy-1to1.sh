@@ -216,6 +216,35 @@ if [[ -x /root/system-bootstrap/scripts/clone-repos.sh && -f /root/system-bootst
     || log "Repo hydration skipped or partially failed"
 fi
 
+cat > /usr/local/bin/system-bootstrap-firstboot.sh <<'FIRSTBOOT'
+#!/usr/bin/env bash
+set -euo pipefail
+
+USERNAME="$1"
+if [[ -x /root/system-bootstrap/scripts/clone-repos.sh && -f /root/system-bootstrap/configs/repos.txt ]]; then
+  runuser -u "$USERNAME" -- env HOME="/home/${USERNAME}" \
+    bash /root/system-bootstrap/scripts/clone-repos.sh --mode clone-missing || true
+fi
+systemctl disable system-bootstrap-firstboot.service || true
+rm -f /etc/systemd/system/system-bootstrap-firstboot.service
+FIRSTBOOT
+chmod +x /usr/local/bin/system-bootstrap-firstboot.sh
+
+cat > /etc/systemd/system/system-bootstrap-firstboot.service <<SERVICE
+[Unit]
+Description=Retry workspace repo hydration after first boot
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/system-bootstrap-firstboot.sh ${USERNAME}
+
+[Install]
+WantedBy=multi-user.target
+SERVICE
+systemctl enable system-bootstrap-firstboot.service
+
 if [[ -s /root/system-bootstrap/manifests/enabled-services.txt ]]; then
   log "Enabling captured services"
   while IFS= read -r svc; do
