@@ -216,6 +216,13 @@ if [[ -x /root/system-bootstrap/scripts/clone-repos.sh && -f /root/system-bootst
     || log "Repo hydration skipped or partially failed"
 fi
 
+if [[ -x "/home/${USERNAME}/codex-orchestrator/install.sh" ]]; then
+  log "Installing codex-orchestrator into user environment"
+  runuser -u "$USERNAME" -- env HOME="/home/${USERNAME}" CODEX_ORCHESTRATOR_ENABLE_TIMER=0 \
+    bash "/home/${USERNAME}/codex-orchestrator/install.sh" \
+    || log "codex-orchestrator install skipped or partially failed"
+fi
+
 cat > /usr/local/bin/system-bootstrap-restore-audit.sh <<'AUDIT'
 #!/usr/bin/env bash
 set -euo pipefail
@@ -356,6 +363,10 @@ USERNAME="$1"
 if [[ -x /root/system-bootstrap/scripts/clone-repos.sh && -f /root/system-bootstrap/configs/repos.txt ]]; then
   runuser -u "$USERNAME" -- env HOME="/home/${USERNAME}" \
     bash /root/system-bootstrap/scripts/clone-repos.sh --mode clone-missing || true
+fi
+if [[ -x "/home/${USERNAME}/codex-orchestrator/install.sh" ]]; then
+  runuser -u "$USERNAME" -- env HOME="/home/${USERNAME}" CODEX_ORCHESTRATOR_ENABLE_TIMER=0 \
+    bash "/home/${USERNAME}/codex-orchestrator/install.sh" || true
 fi
 if [[ -x /usr/local/bin/system-bootstrap-restore-audit.sh ]]; then
   install -d -o "$USERNAME" -g "$USERNAME" "/home/${USERNAME}/.local/state/system-bootstrap"
