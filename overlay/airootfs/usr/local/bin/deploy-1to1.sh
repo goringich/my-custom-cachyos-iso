@@ -364,6 +364,10 @@ if [[ -x /root/system-bootstrap/scripts/clone-repos.sh && -f /root/system-bootst
   runuser -u "$USERNAME" -- env HOME="/home/${USERNAME}" \
     bash /root/system-bootstrap/scripts/clone-repos.sh --mode clone-missing || true
 fi
+if [[ -x /root/system-bootstrap/scripts/setup-hyprbars.sh ]]; then
+  runuser -u "$USERNAME" -- env HOME="/home/${USERNAME}" \
+    bash /root/system-bootstrap/scripts/setup-hyprbars.sh || true
+fi
 if [[ -x "/home/${USERNAME}/codex-orchestrator/install.sh" ]]; then
   runuser -u "$USERNAME" -- env HOME="/home/${USERNAME}" CODEX_ORCHESTRATOR_ENABLE_TIMER=0 \
     bash "/home/${USERNAME}/codex-orchestrator/install.sh" || true
