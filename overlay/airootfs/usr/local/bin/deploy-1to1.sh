@@ -208,6 +208,14 @@ if [[ -d /root/system-bootstrap/home ]]; then
   chown -R "${USERNAME}:${USERNAME}" "/home/${USERNAME}"
 fi
 
+if [[ -x /root/system-bootstrap/scripts/clone-repos.sh && -f /root/system-bootstrap/configs/repos.txt ]]; then
+  log "Hydrating workspace repositories"
+  install -d -o "${USERNAME}" -g "${USERNAME}" "/home/${USERNAME}/Desktop"
+  runuser -u "$USERNAME" -- env HOME="/home/${USERNAME}" \
+    bash /root/system-bootstrap/scripts/clone-repos.sh --mode clone-missing \
+    || log "Repo hydration skipped or partially failed"
+fi
+
 if [[ -s /root/system-bootstrap/manifests/enabled-services.txt ]]; then
   log "Enabling captured services"
   while IFS= read -r svc; do
