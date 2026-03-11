@@ -17,6 +17,7 @@ Optional:
   --keymap          Console keymap (default: ru)
   --user-password   Initial user password (default: changeme)
   --root-password   Initial root password (default: changeme)
+  --dry-run         Validate inputs and print the install plan without touching the disk
 
 WARNING: selected disk will be fully erased.
 USAGE
@@ -47,6 +48,7 @@ LOCALE="ru_RU"
 KEYMAP="ru"
 USER_PASSWORD="changeme"
 ROOT_PASSWORD="changeme"
+DRY_RUN=0
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -58,6 +60,7 @@ while [[ $# -gt 0 ]]; do
     --keymap) KEYMAP="$2"; shift 2 ;;
     --user-password) USER_PASSWORD="$2"; shift 2 ;;
     --root-password) ROOT_PASSWORD="$2"; shift 2 ;;
+    --dry-run) DRY_RUN=1; shift ;;
     -h|--help) usage; exit 0 ;;
     *)
       echo "Unknown option: $1" >&2
@@ -85,6 +88,40 @@ PAYLOAD_DIR="/root/system-bootstrap"
 if [[ ! -d "$PAYLOAD_DIR/manifests" ]]; then
   echo "Payload missing at $PAYLOAD_DIR" >&2
   exit 1
+fi
+
+if [[ "$DRY_RUN" -eq 1 ]]; then
+  cat <<EOF
+Dry-run install plan
+
+Disk: $DISK
+EFI partition: $(part_path "$DISK" 1)
+Root partition: $(part_path "$DISK" 2)
+Hostname: $HOSTNAME
+User: $USERNAME
+Timezone: $TIMEZONE
+Locale: $LOCALE
+Keymap: $KEYMAP
+Payload: $PAYLOAD_DIR
+
+Planned filesystem layout:
+- GPT partition table
+- 1 GiB EFI FAT32 partition
+- Btrfs root partition
+- subvolumes: @, @home, @var, @snapshots
+
+Planned bootstrap flow:
+1. wipe target disk
+2. create EFI + ROOT partitions
+3. pacstrap base system
+4. copy bundled system-bootstrap payload
+5. restore home snapshot
+6. hydrate repositories from configs/repos.txt
+7. install codex-orchestrator if present
+8. install first-boot retry + restore audit
+9. install GRUB and finish bring-up
+EOF
+  exit 0
 fi
 
 printf 'Type exactly YES to continue and wipe %s: ' "$DISK"

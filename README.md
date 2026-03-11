@@ -71,6 +71,11 @@ sudo dd if=out/archlinux-YYYY.MM.DD-x86_64.iso of=/dev/sdX bs=4M status=progress
 После загрузки с флешки в live-системе:
 
 ```bash
+deploy-1to1.sh --dry-run \
+  --disk /dev/nvme0n1 \
+  --hostname cachy-main \
+  --user goringich
+
 deploy-1to1.sh \
   --disk /dev/nvme0n1 \
   --hostname cachy-main \
@@ -78,6 +83,8 @@ deploy-1to1.sh \
   --timezone Europe/Moscow \
   --locale ru_RU
 ```
+
+`--dry-run` сначала прогоняет preflight и печатает точный install plan без записи на диск. Это нормальный обязательный шаг перед реальным wipe.
 
 По умолчанию временные пароли:
 - `root/changeme`
