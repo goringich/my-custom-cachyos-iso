@@ -30,6 +30,10 @@ if [[ ! -d "$PAYLOAD_SRC" ]]; then
   exit 1
 fi
 
+if [[ -x "$ROOT_DIR/scripts/verify-platform-bridge.sh" ]]; then
+  "$ROOT_DIR/scripts/verify-platform-bridge.sh"
+fi
+
 mkdir -p "$WORK_DIR" "$OUT_DIR"
 rm -rf "$WORK_DIR/mkarchiso"
 rm -rf "$PROFILE_DIR"

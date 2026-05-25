@@ -10,6 +10,7 @@
 
 - `build.sh` - сборка ISO через `mkarchiso`.
 - `overlay/airootfs/usr/local/bin/deploy-1to1.sh` - установщик внутри live-среды.
+- `scripts/verify-platform-bridge.sh` - проверка, что ISO route использует shared restore/audit entrypoints из bundled `system-bootstrap`, а не stale copy-paste logic.
 - `scripts/install-deps.sh` - установка зависимостей сборки.
 - `system-bootstrap/` - submodule с payload твоей системы.
 
@@ -46,6 +47,8 @@ cd <your_repo>
 git submodule update --init --recursive
 sudo ./scripts/install-deps.sh
 ```
+
+Перед сборкой `build.sh` автоматически гоняет bridge verification, чтобы install-time route не расходился с `system-bootstrap`.
 
 По умолчанию `build.sh` использует payload из `./system-bootstrap`.
 Если нужен другой источник, можно переопределить `PAYLOAD_SRC`:
