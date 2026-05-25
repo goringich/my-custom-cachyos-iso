@@ -33,6 +33,9 @@ fi
 if [[ -x "$ROOT_DIR/scripts/verify-platform-bridge.sh" ]]; then
   "$ROOT_DIR/scripts/verify-platform-bridge.sh"
 fi
+if [[ -x "$ROOT_DIR/scripts/verify-postinstall-flow.sh" ]]; then
+  "$ROOT_DIR/scripts/verify-postinstall-flow.sh"
+fi
 
 mkdir -p "$WORK_DIR" "$OUT_DIR"
 rm -rf "$WORK_DIR/mkarchiso"
@@ -76,6 +79,7 @@ base-devel
 PKGS
 
 chmod +x "$PROFILE_DIR/airootfs/usr/local/bin/deploy-1to1.sh"
+chmod +x "$PROFILE_DIR/airootfs/usr/local/lib/custom-cachyos-iso/post-install-1to1.sh"
 
 # Build ISO.
 mkarchiso -v -w "$WORK_DIR/mkarchiso" -o "$OUT_DIR" "$PROFILE_DIR"

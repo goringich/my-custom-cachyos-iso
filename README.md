@@ -10,7 +10,9 @@
 
 - `build.sh` - сборка ISO через `mkarchiso`.
 - `overlay/airootfs/usr/local/bin/deploy-1to1.sh` - установщик внутри live-среды.
+- `overlay/airootfs/usr/local/lib/custom-cachyos-iso/post-install-1to1.sh` - shared post-install stage that is used both by the real installer and by the install-flow simulator.
 - `scripts/verify-platform-bridge.sh` - проверка, что ISO route использует shared restore/audit entrypoints из bundled `system-bootstrap`, а не stale copy-paste logic.
+- `scripts/verify-postinstall-flow.sh` - симуляция install-time post-install path против temp target root, чтобы pre-build gate проверял не только ссылки, но и реальные target artifacts.
 - `scripts/install-deps.sh` - установка зависимостей сборки.
 - `system-bootstrap/` - submodule с payload твоей системы.
 
@@ -48,7 +50,7 @@ git submodule update --init --recursive
 sudo ./scripts/install-deps.sh
 ```
 
-Перед сборкой `build.sh` автоматически гоняет bridge verification, чтобы install-time route не расходился с `system-bootstrap`.
+Перед сборкой `build.sh` автоматически гоняет bridge verification и post-install simulation, чтобы install-time route не расходился с `system-bootstrap` и продолжал создавать ожидаемый target state.
 
 По умолчанию `build.sh` использует payload из `./system-bootstrap`.
 Если нужен другой источник, можно переопределить `PAYLOAD_SRC`:
