@@ -7,6 +7,7 @@ POSTINSTALL_SCRIPT="$ROOT_DIR/overlay/airootfs/usr/local/lib/custom-cachyos-iso/
 TMP_DIR="$(mktemp -d)"
 TARGET_ROOT="$TMP_DIR/rootfs"
 COMMAND_LOG="$TMP_DIR/postinstall-commands.log"
+FIRSTBOOT_COMMAND_LOG="$TMP_DIR/firstboot-commands.log"
 
 cleanup() {
   rm -rf "$TMP_DIR"
@@ -59,5 +60,17 @@ grep -q 'ExecStart=/usr/local/bin/system-bootstrap-firstboot.sh tester' "$TARGET
 grep -q '^NetworkManager$' "$TARGET_ROOT/var/lib/custom-cachyos-iso/enabled-units.log" || fail "NetworkManager enable step missing"
 grep -q '^system-bootstrap-firstboot.service$' "$TARGET_ROOT/var/lib/custom-cachyos-iso/enabled-units.log" || fail "firstboot unit enable step missing"
 grep -q '^clone-repos tester$' "$COMMAND_LOG" || fail "repo hydration path did not run"
+
+SYSTEM_BOOTSTRAP_FIRSTBOOT_TEST_MODE=1 \
+SYSTEM_BOOTSTRAP_FIRSTBOOT_TARGET_ROOT="$TARGET_ROOT" \
+SYSTEM_BOOTSTRAP_FIRSTBOOT_COMMAND_LOG="$FIRSTBOOT_COMMAND_LOG" \
+"$TARGET_ROOT/usr/local/bin/system-bootstrap-firstboot.sh" tester
+
+[[ -f "$TARGET_ROOT/home/tester/.local/state/system-bootstrap/restore-report.txt" ]] || fail "firstboot restore audit report missing"
+grep -q '^Restore verification report$' "$TARGET_ROOT/home/tester/.local/state/system-bootstrap/restore-report.txt" || fail "firstboot restore audit report malformed"
+grep -q '^clone-repos tester$' "$FIRSTBOOT_COMMAND_LOG" || fail "firstboot repo hydration path did not run"
+grep -q '^systemctl disable system-bootstrap-firstboot.service$' "$FIRSTBOOT_COMMAND_LOG" || fail "firstboot self-disable was not attempted"
+[[ ! -e "$TARGET_ROOT/etc/systemd/system/system-bootstrap-firstboot.service" ]] || fail "firstboot service file was not cleaned up"
+[[ ! -e "$TARGET_ROOT/etc/systemd/system/multi-user.target.wants/system-bootstrap-firstboot.service" ]] || fail "firstboot service symlink was not cleaned up"
 
 echo "verify-postinstall-flow ok"

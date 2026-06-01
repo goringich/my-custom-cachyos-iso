@@ -261,6 +261,22 @@ mkdir -p "$(root_path /usr/local/bin)"
 cat > "$(root_path /usr/local/bin/system-bootstrap-restore-audit.sh)" <<'AUDIT'
 #!/usr/bin/env bash
 set -euo pipefail
+TEST_MODE="${SYSTEM_BOOTSTRAP_FIRSTBOOT_TEST_MODE:-0}"
+TARGET_ROOT="${SYSTEM_BOOTSTRAP_FIRSTBOOT_TARGET_ROOT:-}"
+
+root_path() {
+  local path="$1"
+  if [[ "$TEST_MODE" -eq 1 && -n "$TARGET_ROOT" ]]; then
+    printf '%s%s\n' "${TARGET_ROOT%/}" "$path"
+  else
+    printf '%s\n' "$path"
+  fi
+}
+
+if [[ "$TEST_MODE" -eq 1 ]]; then
+  exec "$(root_path /root/system-bootstrap/scripts/restore-audit.sh)" "$@"
+fi
+
 exec /root/system-bootstrap/scripts/restore-audit.sh "$@"
 AUDIT
 chmod +x "$(root_path /usr/local/bin/system-bootstrap-restore-audit.sh)"
@@ -270,26 +286,103 @@ cat > "$(root_path /usr/local/bin/system-bootstrap-firstboot.sh)" <<'FIRSTBOOT'
 set -euo pipefail
 
 USERNAME="$1"
-if [[ -x /root/system-bootstrap/scripts/clone-repos.sh && -f /root/system-bootstrap/configs/repos.txt ]]; then
-  runuser -u "$USERNAME" -- env HOME="/home/${USERNAME}" \
-    bash /root/system-bootstrap/scripts/clone-repos.sh --mode clone-missing || true
+TEST_MODE="${SYSTEM_BOOTSTRAP_FIRSTBOOT_TEST_MODE:-0}"
+TARGET_ROOT="${SYSTEM_BOOTSTRAP_FIRSTBOOT_TARGET_ROOT:-}"
+COMMAND_LOG="${SYSTEM_BOOTSTRAP_FIRSTBOOT_COMMAND_LOG:-}"
+
+root_path() {
+  local path="$1"
+  if [[ "$TEST_MODE" -eq 1 && -n "$TARGET_ROOT" ]]; then
+    printf '%s%s\n' "${TARGET_ROOT%/}" "$path"
+  else
+    printf '%s\n' "$path"
+  fi
+}
+
+record_cmd() {
+  [[ -n "$COMMAND_LOG" ]] || return 0
+  printf '%s\n' "$*" >> "$COMMAND_LOG"
+}
+
+run_user_bash() {
+  local home_path="$1"
+  shift
+  if [[ "$TEST_MODE" -eq 1 ]]; then
+    record_cmd "runuser $USERNAME $*"
+    return 0
+  fi
+  runuser -u "$USERNAME" -- env HOME="$home_path" "$@"
+}
+
+ensure_state_dir() {
+  local path="$1"
+  if [[ "$TEST_MODE" -eq 1 ]]; then
+    mkdir -p "$path"
+  else
+    install -d -o "$USERNAME" -g "$USERNAME" "$path"
+  fi
+}
+
+own_path() {
+  local path="$1"
+  if [[ "$TEST_MODE" -eq 1 ]]; then
+    record_cmd "chown ${USERNAME}:${USERNAME} $path"
+  else
+    chown "${USERNAME}:${USERNAME}" "$path" || true
+  fi
+}
+
+disable_firstboot_service() {
+  local service_dir service_link
+  if [[ "$TEST_MODE" -eq 1 ]]; then
+    service_dir="$(root_path /etc/systemd/system)"
+    service_link="$(root_path /etc/systemd/system/multi-user.target.wants/system-bootstrap-firstboot.service)"
+    rm -f "$service_link"
+    record_cmd "systemctl disable system-bootstrap-firstboot.service"
+  else
+    systemctl disable system-bootstrap-firstboot.service || true
+    service_dir=/etc/systemd/system
+  fi
+  rm -f "$service_dir/system-bootstrap-firstboot.service"
+}
+
+user_home="$(root_path "/home/${USERNAME}")"
+clone_repos_script="$(root_path /root/system-bootstrap/scripts/clone-repos.sh)"
+clone_repos_manifest="$(root_path /root/system-bootstrap/configs/repos.txt)"
+hyprbars_script="$(root_path /root/system-bootstrap/scripts/setup-hyprbars.sh)"
+codex_install_script="$(root_path "/home/${USERNAME}/codex-orchestrator/install.sh")"
+restore_audit_runner="$(root_path /usr/local/bin/system-bootstrap-restore-audit.sh)"
+
+if [[ -x "$clone_repos_script" && -f "$clone_repos_manifest" ]]; then
+  if [[ "$TEST_MODE" -eq 1 ]]; then
+    record_cmd "clone-repos $USERNAME"
+  else
+    run_user_bash "$user_home" bash /root/system-bootstrap/scripts/clone-repos.sh --mode clone-missing || true
+  fi
 fi
-if [[ -x /root/system-bootstrap/scripts/setup-hyprbars.sh ]]; then
-  runuser -u "$USERNAME" -- env HOME="/home/${USERNAME}" \
-    bash /root/system-bootstrap/scripts/setup-hyprbars.sh || true
+if [[ -x "$hyprbars_script" ]]; then
+  if [[ "$TEST_MODE" -eq 1 ]]; then
+    record_cmd "setup-hyprbars $USERNAME"
+  else
+    run_user_bash "$user_home" bash /root/system-bootstrap/scripts/setup-hyprbars.sh || true
+  fi
 fi
-if [[ -x "/home/${USERNAME}/codex-orchestrator/install.sh" ]]; then
-  runuser -u "$USERNAME" -- env HOME="/home/${USERNAME}" CODEX_ORCHESTRATOR_ENABLE_TIMER=0 \
-    bash "/home/${USERNAME}/codex-orchestrator/install.sh" || true
+if [[ -x "$codex_install_script" ]]; then
+  if [[ "$TEST_MODE" -eq 1 ]]; then
+    record_cmd "codex-orchestrator install $USERNAME"
+  else
+    runuser -u "$USERNAME" -- env HOME="/home/${USERNAME}" CODEX_ORCHESTRATOR_ENABLE_TIMER=0 \
+      bash "/home/${USERNAME}/codex-orchestrator/install.sh" || true
+  fi
 fi
-if [[ -x /usr/local/bin/system-bootstrap-restore-audit.sh ]]; then
-  install -d -o "$USERNAME" -g "$USERNAME" "/home/${USERNAME}/.local/state/system-bootstrap"
-  report_file="/home/${USERNAME}/.local/state/system-bootstrap/restore-report.txt"
-  /usr/local/bin/system-bootstrap-restore-audit.sh "$USERNAME" "$report_file" "/home/${USERNAME}" || true
-  chown "${USERNAME}:${USERNAME}" "$report_file" || true
+if [[ -x "$restore_audit_runner" ]]; then
+  state_dir="$(root_path "/home/${USERNAME}/.local/state/system-bootstrap")"
+  ensure_state_dir "$state_dir"
+  report_file="$state_dir/restore-report.txt"
+  "$restore_audit_runner" "$USERNAME" "$report_file" "$user_home" || true
+  own_path "$report_file"
 fi
-systemctl disable system-bootstrap-firstboot.service || true
-rm -f /etc/systemd/system/system-bootstrap-firstboot.service
+disable_firstboot_service
 FIRSTBOOT
 chmod +x "$(root_path /usr/local/bin/system-bootstrap-firstboot.sh)"
 
