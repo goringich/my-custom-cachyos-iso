@@ -12,7 +12,7 @@
 - `overlay/airootfs/usr/local/bin/deploy-1to1.sh` - установщик внутри live-среды.
 - `overlay/airootfs/usr/local/lib/custom-cachyos-iso/post-install-1to1.sh` - shared post-install stage that is used both by the real installer and by the install-flow simulator.
 - `scripts/verify-platform-bridge.sh` - проверка, что ISO route использует shared restore/audit entrypoints из bundled `system-bootstrap`, а не stale copy-paste logic.
-- `scripts/verify-postinstall-flow.sh` - симуляция install-time post-install path против temp target root, чтобы pre-build gate проверял не только ссылки, но и реальные target artifacts.
+- `scripts/verify-postinstall-flow.sh` - симуляция install-time post-install path против temp target root, чтобы pre-build gate проверял не только ссылки, но и реальные target artifacts, включая user-systemd intent и portable browser-text bundle.
 - `scripts/install-deps.sh` - установка зависимостей сборки.
 - `system-bootstrap/` - submodule с payload твоей системы.
 
@@ -51,6 +51,12 @@ sudo ./scripts/install-deps.sh
 ```
 
 Перед сборкой `build.sh` автоматически гоняет bridge verification и post-install simulation, чтобы install-time route не расходился с `system-bootstrap` и продолжал создавать ожидаемый target state.
+
+Сейчас эта проверка обязана подтверждать ещё и такие вещи:
+
+- bundled payload действительно содержит `manifests/enabled-user-units.txt`
+- user-session intent доезжает в `~/.config/systemd/user/*target.wants`
+- portable browser-text bundle (`Super+F7 screenshot -> bot`) реально попадает в восстановленный home target
 
 По умолчанию `build.sh` использует payload из `./system-bootstrap`.
 Если нужен другой источник, можно переопределить `PAYLOAD_SRC`:

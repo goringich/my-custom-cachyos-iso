@@ -12,6 +12,10 @@ required_payload_files=(
   "scripts/resolve-adaptive-layers.sh"
   "scripts/verify-target-matrix.sh"
   "manifests/enabled-system-units.txt"
+  "manifests/enabled-user-units.txt"
+  "home/.config/hypr/scripts/CaptureBrowserText.sh"
+  "home/.local/bin/browser-text-relay-tunnel-ensure"
+  "home/__home_organized/scripts/active-window-text-log.py"
 )
 
 for rel_path in "${required_payload_files[@]}"; do
