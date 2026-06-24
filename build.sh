@@ -50,6 +50,20 @@ export ZSTD_NBTHREADS="${THREADS}"
 # Overlay custom scripts into live rootfs.
 rsync -a "$OVERLAY_DIR/" "$PROFILE_DIR/"
 
+# Archiso reapplies profiledef.sh file_permissions after copying airootfs.
+# Keep the live installer entrypoints executable inside the final SquashFS.
+append_profile_permission() {
+  local target_path="$1"
+  local mode_spec="$2"
+  local entry="  [\"$target_path\"]=\"$mode_spec\""
+
+  grep -Fqx "$entry" "$PROFILE_DIR/profiledef.sh" && return 0
+  sed -i "\$i\\$entry" "$PROFILE_DIR/profiledef.sh"
+}
+
+append_profile_permission "/usr/local/bin/deploy-1to1.sh" "0:0:755"
+append_profile_permission "/usr/local/lib/custom-cachyos-iso/post-install-1to1.sh" "0:0:755"
+
 # Bundle system-bootstrap payload into ISO live environment.
 mkdir -p "$PROFILE_DIR/airootfs/root/system-bootstrap"
 rsync -a --delete --exclude '.git' "$PAYLOAD_SRC/" "$PROFILE_DIR/airootfs/root/system-bootstrap/"
