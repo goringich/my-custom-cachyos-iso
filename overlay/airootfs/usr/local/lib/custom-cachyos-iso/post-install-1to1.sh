@@ -6,8 +6,7 @@ USERNAME="$2"
 TIMEZONE="$3"
 LOCALE="$4"
 KEYMAP="$5"
-ROOT_PASSWORD="$6"
-USER_PASSWORD="$7"
+CREDENTIALS_FILE="$6"
 
 TARGET_ROOT="${TARGET_ROOT:-}"
 TEST_MODE="${POSTINSTALL_TEST_MODE:-0}"
@@ -192,8 +191,16 @@ if ! have_user "$USERNAME"; then
   create_user "$USERNAME"
 fi
 
+[[ -f "$(root_path "$CREDENTIALS_FILE")" ]] || { echo "Credential file is missing" >&2; exit 1; }
+credential_mode="$(stat -c '%a' "$(root_path "$CREDENTIALS_FILE")")"
+[[ "$credential_mode" == "400" || "$credential_mode" == "600" ]] || { echo "Credential file permissions are unsafe" >&2; exit 1; }
+ROOT_PASSWORD="$(sed -n '1s/^root://p' "$(root_path "$CREDENTIALS_FILE")")"
+USER_PASSWORD="$(sed -n "2s/^${USERNAME}://p" "$(root_path "$CREDENTIALS_FILE")")"
+[[ -n "$ROOT_PASSWORD" && -n "$USER_PASSWORD" ]] || { echo "Credential file is malformed" >&2; exit 1; }
 set_password root "$ROOT_PASSWORD"
 set_password "$USERNAME" "$USER_PASSWORD"
+unset ROOT_PASSWORD USER_PASSWORD
+rm -f "$(root_path "$CREDENTIALS_FILE")"
 
 mkdir -p "$(root_path /etc/sudoers.d)"
 echo '%wheel ALL=(ALL:ALL) ALL' > "$(root_path /etc/sudoers.d/10-wheel)"

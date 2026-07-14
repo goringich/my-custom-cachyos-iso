@@ -33,16 +33,19 @@ mkdir -p \
 printf '# ru_RU.UTF-8 UTF-8\n' > "$TARGET_ROOT/etc/locale.gen"
 
 rsync -a --no-owner --no-group --delete --exclude '.git' "$PAYLOAD_SRC/" "$TARGET_ROOT/root/system-bootstrap/"
+printf 'root:test-root-password-2026\ntester:test-user-password-2026\n' > "$TARGET_ROOT/root/test-credentials"
+chmod 600 "$TARGET_ROOT/root/test-credentials"
 
 TARGET_ROOT="$TARGET_ROOT" \
 POSTINSTALL_TEST_MODE=1 \
 POSTINSTALL_COMMAND_LOG="$COMMAND_LOG" \
-bash "$POSTINSTALL_SCRIPT" portable-lab tester Europe/Moscow ru_RU ru changeme changeme
+bash "$POSTINSTALL_SCRIPT" portable-lab tester Europe/Moscow ru_RU ru /root/test-credentials
 
 grep -q '^portable-lab$' "$TARGET_ROOT/etc/hostname" || fail "hostname was not written"
 grep -q '^LANG=ru_RU.UTF-8$' "$TARGET_ROOT/etc/locale.conf" || fail "locale.conf was not written"
 grep -q '^KEYMAP=ru$' "$TARGET_ROOT/etc/vconsole.conf" || fail "vconsole.conf was not written"
 grep -q '^tester:' "$TARGET_ROOT/etc/passwd.mock" || fail "tester user was not created in test mode"
+[[ ! -e "$TARGET_ROOT/root/test-credentials" ]] || fail "credential file was not removed"
 [[ -f "$TARGET_ROOT/home/tester/.zshrc" ]] || fail "shared restore layer did not restore home payload"
 [[ -f "$TARGET_ROOT/home/tester/.config/hypr/monitors.conf" ]] || fail "shared restore layer did not restore desktop payload"
 [[ -f "$TARGET_ROOT/root/system-bootstrap/manifests/enabled-user-units.txt" ]] || fail "enabled-user-units manifest missing from bundled payload"

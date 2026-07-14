@@ -8,6 +8,7 @@ PROFILE_DIR="$WORK_DIR/profile"
 OVERLAY_DIR="$ROOT_DIR/overlay"
 PAYLOAD_SRC="${PAYLOAD_SRC:-$ROOT_DIR/system-bootstrap}"
 RELENG_SRC="${RELENG_SRC:-/usr/share/archiso/configs/releng}"
+PACMAN_CONFIG_SRC="$ROOT_DIR/config/pacman.conf"
 
 need_cmd() {
   command -v "$1" >/dev/null 2>&1 || {
@@ -27,6 +28,11 @@ fi
 
 if [[ ! -d "$PAYLOAD_SRC" ]]; then
   echo "Payload source not found: $PAYLOAD_SRC" >&2
+  exit 1
+fi
+
+if [[ ! -s "$PACMAN_CONFIG_SRC" ]] || grep -Eq '^[[:space:]]*SigLevel[[:space:]]*=[[:space:]]*Never' "$PACMAN_CONFIG_SRC"; then
+  echo "A signed, tracked pacman config is required: $PACMAN_CONFIG_SRC" >&2
   exit 1
 fi
 
@@ -68,14 +74,18 @@ append_profile_permission "/usr/local/lib/custom-cachyos-iso/post-install-1to1.s
 mkdir -p "$PROFILE_DIR/airootfs/root/system-bootstrap"
 rsync -a --delete --exclude '.git' "$PAYLOAD_SRC/" "$PROFILE_DIR/airootfs/root/system-bootstrap/"
 
-# Store host pacman config inside payload for chroot restore stage.
+# Bundle an explicit signed package-manager contract. Host pacman configuration
+# is intentionally excluded because it may contain unsafe policy or local-only
+# mirrors and makes the image non-reproducible.
 mkdir -p "$PROFILE_DIR/airootfs/root/system-bootstrap/pacman-host/pacman.d"
-if [[ -f /etc/pacman.conf ]]; then
-  cp /etc/pacman.conf "$PROFILE_DIR/airootfs/root/system-bootstrap/pacman-host/pacman.conf"
-fi
-if [[ -d /etc/pacman.d ]]; then
-  rsync -a /etc/pacman.d/ "$PROFILE_DIR/airootfs/root/system-bootstrap/pacman-host/pacman.d/"
-fi
+install -m 0644 "$PACMAN_CONFIG_SRC" "$PROFILE_DIR/airootfs/root/system-bootstrap/pacman-host/pacman.conf"
+for mirrorlist in mirrorlist cachyos-mirrorlist; do
+  [[ -s "/etc/pacman.d/$mirrorlist" ]] || {
+    echo "Required signed repository mirror list is missing: /etc/pacman.d/$mirrorlist" >&2
+    exit 1
+  }
+  install -m 0644 "/etc/pacman.d/$mirrorlist" "$PROFILE_DIR/airootfs/root/system-bootstrap/pacman-host/pacman.d/$mirrorlist"
+done
 
 # Ensure required runtime packages for deployment script exist in ISO.
 cat >> "$PROFILE_DIR/packages.x86_64" <<'PKGS'
@@ -90,6 +100,9 @@ efibootmgr
 networkmanager
 sudo
 base-devel
+cachyos-keyring
+cachyos-mirrorlist
+archlinux-keyring
 PKGS
 
 chmod +x "$PROFILE_DIR/airootfs/usr/local/bin/deploy-1to1.sh"

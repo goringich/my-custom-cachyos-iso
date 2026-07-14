@@ -1,0 +1,35 @@
+name: install-image-ci
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout with pinned payload
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          submodules: recursive
+      - name: Install test dependency
+        run: sudo apt-get update && sudo apt-get install -y rsync
+      - name: Check shell syntax
+        run: |
+          bash -n build.sh
+          bash -n scripts/*.sh
+          bash -n overlay/airootfs/usr/local/bin/deploy-1to1.sh
+          bash -n overlay/airootfs/usr/local/lib/custom-cachyos-iso/post-install-1to1.sh
+      - name: Reject unsafe package policy and default credentials
+        run: |
+          ! grep -Eq '^[[:space:]]*SigLevel[[:space:]]*=[[:space:]]*Never' config/pacman.conf
+          ! grep -R -n --fixed-strings 'USER_PASSWORD="changeme"' overlay
+          ! grep -R -n --fixed-strings 'ROOT_PASSWORD="changeme"' overlay
+      - name: Verify payload bridge
+        run: bash scripts/verify-platform-bridge.sh
+      - name: Verify post-install flow
+        run: bash scripts/verify-postinstall-flow.sh

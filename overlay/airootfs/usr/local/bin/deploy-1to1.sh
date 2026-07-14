@@ -15,8 +15,8 @@ Optional:
   --timezone        Timezone (default: Europe/Moscow)
   --locale          Locale without suffix (default: ru_RU)
   --keymap          Console keymap (default: ru)
-  --user-password   Initial user password (default: changeme)
-  --root-password   Initial root password (default: changeme)
+  --user-password-file  Root-only file containing the initial user password
+  --root-password-file  Root-only file containing the initial root password
   --dry-run         Validate inputs and print the install plan without touching the disk
 
 WARNING: selected disk will be fully erased.
@@ -28,6 +28,33 @@ need_cmd() {
     echo "Missing command: $1" >&2
     exit 1
   }
+}
+
+load_password() {
+  local label="$1"
+  local file="$2"
+  local first second mode
+  if [[ -n "$file" ]]; then
+    [[ -f "$file" ]] || { echo "$label password file not found: $file" >&2; exit 1; }
+    mode="$(stat -c '%a' "$file")"
+    [[ "$mode" == "400" || "$mode" == "600" ]] || {
+      echo "$label password file must have mode 0400 or 0600" >&2
+      exit 1
+    }
+    IFS= read -r first < "$file"
+  else
+    [[ -t 0 ]] || { echo "$label password requires an interactive terminal or --${label,,}-password-file" >&2; exit 1; }
+    read -r -s -p "$label password: " first
+    echo
+    read -r -s -p "Confirm $label password: " second
+    echo
+    [[ "$first" == "$second" ]] || { echo "$label passwords do not match" >&2; exit 1; }
+  fi
+  [[ ${#first} -ge 12 && "$first" != "changeme" ]] || {
+    echo "$label password must be at least 12 characters and cannot be changeme" >&2
+    exit 1
+  }
+  printf '%s' "$first"
 }
 
 part_path() {
@@ -46,8 +73,8 @@ USERNAME=""
 TIMEZONE="Europe/Moscow"
 LOCALE="ru_RU"
 KEYMAP="ru"
-USER_PASSWORD="changeme"
-ROOT_PASSWORD="changeme"
+USER_PASSWORD_FILE=""
+ROOT_PASSWORD_FILE=""
 DRY_RUN=0
 
 while [[ $# -gt 0 ]]; do
@@ -58,8 +85,12 @@ while [[ $# -gt 0 ]]; do
     --timezone) TIMEZONE="$2"; shift 2 ;;
     --locale) LOCALE="$2"; shift 2 ;;
     --keymap) KEYMAP="$2"; shift 2 ;;
-    --user-password) USER_PASSWORD="$2"; shift 2 ;;
-    --root-password) ROOT_PASSWORD="$2"; shift 2 ;;
+    --user-password-file) USER_PASSWORD_FILE="$2"; shift 2 ;;
+    --root-password-file) ROOT_PASSWORD_FILE="$2"; shift 2 ;;
+    --user-password|--root-password)
+      echo "$1 is disabled because command-line passwords leak through process listings; use the matching --*-password-file option" >&2
+      exit 1
+      ;;
     --dry-run) DRY_RUN=1; shift ;;
     -h|--help) usage; exit 0 ;;
     *)
@@ -143,6 +174,9 @@ read -r confirm
   exit 1
 }
 
+USER_PASSWORD="$(load_password User "$USER_PASSWORD_FILE")"
+ROOT_PASSWORD="$(load_password Root "$ROOT_PASSWORD_FILE")"
+
 EFI_PART="$(part_path "$DISK" 1)"
 ROOT_PART="$(part_path "$DISK" 2)"
 
@@ -169,18 +203,22 @@ mount -o subvol=@var "$ROOT_PART" /mnt/var
 mount -o subvol=@snapshots "$ROOT_PART" /mnt/.snapshots
 mount "$EFI_PART" /mnt/efi
 
-pacstrap -K /mnt base linux linux-firmware sudo vim git rsync btrfs-progs grub efibootmgr networkmanager base-devel
+pacstrap -K /mnt base linux linux-firmware sudo vim git rsync btrfs-progs grub efibootmgr networkmanager base-devel archlinux-keyring cachyos-keyring cachyos-mirrorlist
 
 genfstab -U /mnt >> /mnt/etc/fstab
 
 mkdir -p /mnt/root/system-bootstrap
 rsync -a --delete "$PAYLOAD_DIR/" /mnt/root/system-bootstrap/
 install -D -m 0755 /usr/local/lib/custom-cachyos-iso/post-install-1to1.sh /mnt/root/post-install-1to1.sh
-arch-chroot /mnt /root/post-install-1to1.sh "$HOSTNAME" "$USERNAME" "$TIMEZONE" "$LOCALE" "$KEYMAP" "$ROOT_PASSWORD" "$USER_PASSWORD"
+credentials_file="/mnt/root/.custom-cachyos-install-credentials"
+umask 077
+printf 'root:%s\n%s:%s\n' "$ROOT_PASSWORD" "$USERNAME" "$USER_PASSWORD" > "$credentials_file"
+unset ROOT_PASSWORD USER_PASSWORD
+arch-chroot /mnt /root/post-install-1to1.sh "$HOSTNAME" "$USERNAME" "$TIMEZONE" "$LOCALE" "$KEYMAP" /root/.custom-cachyos-install-credentials
 
 rm -f /mnt/root/post-install-1to1.sh
 sync
 
 echo
 echo "Installation complete. You can reboot now."
-echo "Remember to change default passwords immediately."
+echo "Initial passwords were supplied securely and were not embedded in the image."
