@@ -12,24 +12,75 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
-      - name: Checkout with pinned payload
+      - name: Checkout ISO repository
         uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
         with:
+          submodules: false
+
+      - name: Verify pinned platform gitlink
+        id: platform
+        shell: bash
+        run: |
+          set -euo pipefail
+          path="$(git config -f .gitmodules --get submodule.system-bootstrap.path)"
+          url="$(git config -f .gitmodules --get submodule.system-bootstrap.url)"
+          sha="$(git ls-tree HEAD system-bootstrap | awk '$2 == "commit" {print $3}')"
+          [[ "$path" == "system-bootstrap" ]]
+          [[ "$url" == "https://github.com/goringich/system-bootstrap.git" ]]
+          [[ "$sha" =~ ^[0-9a-f]{40}$ ]]
+          echo "sha=$sha" >> "$GITHUB_OUTPUT"
+
+      - name: Detect private payload credential
+        id: payload_auth
+        shell: bash
+        env:
+          SYSTEM_BOOTSTRAP_READ_TOKEN: ${{ secrets.SYSTEM_BOOTSTRAP_READ_TOKEN }}
+        run: |
+          if [[ -n "$SYSTEM_BOOTSTRAP_READ_TOKEN" ]]; then
+            echo "available=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "available=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Checkout pinned private platform
+        if: steps.payload_auth.outputs.available == 'true'
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+        with:
+          repository: goringich/system-bootstrap
+          ref: ${{ steps.platform.outputs.sha }}
+          path: system-bootstrap
+          token: ${{ secrets.SYSTEM_BOOTSTRAP_READ_TOKEN }}
           submodules: recursive
+
+      - name: Record private payload coverage
+        shell: bash
+        run: |
+          if [[ "${{ steps.payload_auth.outputs.available }}" == "true" ]]; then
+            echo "Private system-bootstrap payload checkout: full cross-repo verification enabled." >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "Private system-bootstrap payload checkout: unavailable in this repository; self-contained ISO checks and gitlink validation run here. Full cross-repo payload verification remains enforced by the owner-host system-platform gate." >> "$GITHUB_STEP_SUMMARY"
+          fi
+
       - name: Install test dependency
         run: sudo apt-get update && sudo apt-get install -y rsync
+
       - name: Check shell syntax
         run: |
           bash -n build.sh
           bash -n scripts/*.sh
           bash -n overlay/airootfs/usr/local/bin/deploy-1to1.sh
           bash -n overlay/airootfs/usr/local/lib/custom-cachyos-iso/post-install-1to1.sh
+
       - name: Reject unsafe package policy and default credentials
         run: |
           ! grep -Eq '^[[:space:]]*SigLevel[[:space:]]*=[[:space:]]*Never' config/pacman.conf
           ! grep -R -n --fixed-strings 'USER_PASSWORD="changeme"' overlay
           ! grep -R -n --fixed-strings 'ROOT_PASSWORD="changeme"' overlay
+
       - name: Verify payload bridge
+        if: steps.payload_auth.outputs.available == 'true'
         run: bash scripts/verify-platform-bridge.sh
+
       - name: Verify post-install flow
+        if: steps.payload_auth.outputs.available == 'true'
         run: bash scripts/verify-postinstall-flow.sh
